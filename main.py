@@ -1,141 +1,144 @@
+import logging
 import tempfile
-import threading
-import wave
 from datetime import datetime
 from pathlib import Path
 
-import pyaudio
 import torch
-import typer
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+from transformers import (
+    AutoModelForSpeechSeq2Seq,
+    AutoProcessor,
+    Pipeline,
+    pipeline,
+)
 
-app = typer.Typer()
+from settings import get_settings
 
-
-def record_audio() -> str:
-    CHUNK = 1024
-    FORMAT = pyaudio.paInt16
-    CHANNELS = 1
-    RATE = 44100
-
-    temp_dir = Path(tempfile.gettempdir())
-    OUTPUT_FILENAME = str(
-        temp_dir / f'{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.wav'
-    )
-
-    p = pyaudio.PyAudio()
-    stream = p.open(
-        format=FORMAT,
-        channels=CHANNELS,
-        rate=RATE,
-        input=True,
-        frames_per_buffer=CHUNK,
-    )
-
-    typer.echo('Gravando... (Pressione ENTER para parar)')
-    frames = []
-    recording = threading.Event()
-    recording.set()
-
-    def listen_for_stop():
-        input()
-        recording.clear()
-
-    listener_thread = threading.Thread(target=listen_for_stop, daemon=True)
-    listener_thread.start()
-
-    try:
-        while recording.is_set():
-            data = stream.read(CHUNK, exception_on_overflow=False)
-            frames.append(data)
-    except KeyboardInterrupt:
-        recording.clear()
-
-    typer.echo('Gravação finalizada.')
-
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-
-    wf = wave.open(OUTPUT_FILENAME, 'wb')
-    wf.setnchannels(CHANNELS)
-    wf.setsampwidth(p.get_sample_size(FORMAT))
-    wf.setframerate(RATE)
-    wf.writeframes(b''.join(frames))
-    wf.close()
-
-    return OUTPUT_FILENAME
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+)
 
 
-@app.command()
-def transcribe(
-    audio_file: Path = typer.Argument(
-        None, help='Arquivo de áudio a ser transcrito'
-    ),
-    output_dir: Path = typer.Argument(
-        None, help='Diretório onde será salvo o resultado da transcrição'
-    ),
-):
-    """
-    Transcreve um arquivo de áudio usando o modelo Whisper.
-    """
-    temp_audio_file = None
-    if audio_file is None:
-        typer.echo('Gravando àudio do microfone..')
-        temp_audio_file = record_audio()
-        audio_file = Path(temp_audio_file)
+async def download_audio(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> Path:
+    audio = update.message.audio or update.message.voice
+    if not audio:
+        logging.warning('Nenhum arquivo de áudio encontrado na mensagem.')
+        raise ValueError('Nenhum arquivo de áudio encontrado na mensagem.')
 
-    if not audio_file.exists():
-        typer.echo(f'Erro: Arquivo {audio_file} não encontrado.')
-        raise typer.Exit(code=1)
+    file_id = audio.file_id
 
-    if output_dir is None:
-        root_folder = Path(__file__).parent
-        output_dir = root_folder / 'outputs'
+    file_ext = '.ogg' if update.message.voice else '.mp3'
+    file_name = datetime.now().strftime('%Y-%m-%d_%H-%M-%S') + file_ext
+    file_path = Path(tempfile.gettempdir()) / file_name
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    logging.info('Baixando arquivo de áudio...')
+    audio_file = await context.bot.get_file(file_id)
+    await audio_file.download_to_drive(custom_path=str(file_path))
+    logging.info(f'Arquivo de áudio salvo em: {file_path}')
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    torch_dtype = torch.float16 if device == 'cuda' else torch.float32
+    if not file_path.exists():
+        logging.error(f'Erro: Arquivo {file_path} não encontrado.')
+        raise RuntimeError('Erro ao baixar o arquivo de áudio.')
 
-    model_name = 'openai/whisper-large-v3-turbo'
+    return file_path
 
-    typer.echo(f'Carregando modelo {model_name}...')
-    model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        model_name,
-        torch_dtype=torch_dtype,
-        low_cpu_mem_usage=True,
-        attn_implementation='flash_attention_2',
-    )
-    model.to(device)
 
-    processor = AutoProcessor.from_pretrained(model_name)
-
-    pipe = pipeline(
-        'automatic-speech-recognition',
-        model=model,
-        tokenizer=processor.tokenizer,
-        feature_extractor=processor.feature_extractor,
-        chunk_length_s=30,
-        batch_size=16,
-        torch_dtype=torch_dtype,
-        device=device,
-    )
-
-    typer.echo(f'Transcrevendo {audio_file}...')
-    result = pipe(str(audio_file))
+def transcribe_audio(file_path: Path, pipe: Pipeline, output_dir: Path) -> str:
+    logging.info(f'Transcrevendo {file_path}...')
+    result = pipe(str(file_path))
     transcription_text = result['text']
 
-    output_file = output_dir / f'{audio_file.stem}_transcription.txt'
+    output_file = output_dir / f'{file_path.stem}_transcription.txt'
     output_file.write_text(transcription_text, encoding='utf-8')
 
-    typer.echo(f'Transcrição salva em: {output_file}')
-    typer.echo(f'\nTexto transcrito:\n{transcription_text}')
+    logging.info(f'Transcrição salva em: {output_file}')
 
-    if temp_audio_file is not None:
-        Path(temp_audio_file).unlink()
-        typer.echo(f'Arquivo temporário removido: {temp_audio_file}')
+    return transcription_text
+
+
+class AudioTranscriber:
+    def __init__(self, model_name: str, output_dir: str, device: str):
+        self.model_name = model_name
+        self.output_dir = Path(output_dir)
+        self.device = device
+
+        self.processor = None
+        self.model = None
+        self.pipeline = self._init_pipeline()
+
+    def _init_pipeline(self):
+        torch_dtype = torch.float16 if self.device == 'cuda' else torch.float32
+
+        logging.info(f'Carregando modelo {self.model_name}...')
+        self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            self.model_name,
+            torch_dtype=torch_dtype,
+            low_cpu_mem_usage=True,
+            attn_implementation='flash_attention_2',
+        )
+        self.model.to(self.device)
+
+        self.processor = AutoProcessor.from_pretrained(self.model_name)
+
+        return pipeline(
+            'automatic-speech-recognition',
+            model=self.model,
+            tokenizer=self.processor.tokenizer,
+            feature_extractor=self.processor.feature_extractor,
+            chunk_length_s=30,
+            batch_size=16,
+            torch_dtype=torch_dtype,
+            device=self.device,
+        )
+
+    async def handle_audio(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        file_path = await download_audio(update, context)
+
+        transcription_text = transcribe_audio(
+            file_path=file_path,
+            pipe=self.pipeline,
+            output_dir=self.output_dir,
+        )
+
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=transcription_text,
+        )
+
+        file_path.unlink()
+        logging.info(f'Arquivo temporário removido: {file_path}')
+
+    async def __call__(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ):
+        await self.handle_audio(update, context)
 
 
 if __name__ == '__main__':
-    app()
+    settings = get_settings()
+    application = ApplicationBuilder().token(settings.bot_token).build()
+
+    output_dir = Path(settings.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    transcriber = AudioTranscriber(
+        model_name='openai/whisper-large-v3-turbo',
+        output_dir=output_dir,
+        device='cuda' if torch.cuda.is_available() else 'cpu',
+    )
+
+    audio_handler = MessageHandler(filters.AUDIO | filters.VOICE, transcriber)
+    application.add_handler(audio_handler)
+
+    application.run_polling()
