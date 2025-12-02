@@ -1,0 +1,32 @@
+[project]
+name = "whisper-audio-transcriber"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "accelerate>=1.12.0",
+    "flash-attn",
+    "pyaudio>=0.2.14",
+    "tokenizers==0.21",
+    "torch>=2.9.1",
+    "transformers==4.47",
+    "typer>=0.20.0",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.14.7"]
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+preview = true
+select = ['I', 'F', 'E', 'W', 'PL', 'PT']
+
+[tool.ruff.format]
+preview = true
+quote-style = 'single'
+
+[tool.uv.sources]
+flash-attn = { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.4.22/flash_attn-2.8.1+cu128torch2.9-cp313-cp313-linux_x86_64.whl" }
