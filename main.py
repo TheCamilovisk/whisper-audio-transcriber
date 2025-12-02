@@ -29,6 +29,19 @@ logging.basicConfig(
 async def download_audio(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> Path:
+    """Baixa arquivo de áudio de uma mensagem do Telegram.
+
+    Args:
+        update: Objeto Update do Telegram contendo a mensagem.
+        context: Contexto do bot do Telegram.
+
+    Returns:
+        Path do arquivo de áudio baixado.
+
+    Raises:
+        ValueError: Se nenhum arquivo de áudio for encontrado na mensagem.
+        RuntimeError: Se ocorrer erro ao baixar o arquivo.
+    """
     audio = update.message.audio or update.message.voice
     if not audio:
         logging.warning('Nenhum arquivo de áudio encontrado na mensagem.')
@@ -53,6 +66,16 @@ async def download_audio(
 
 
 def transcribe_audio(file_path: Path, pipe: Pipeline, output_dir: Path) -> str:
+    """Transcreve um arquivo de áudio usando o pipeline Whisper.
+
+    Args:
+        file_path: Caminho do arquivo de áudio a ser transcrito.
+        pipe: Pipeline do transformers configurado para speech-to-text.
+        output_dir: Diretório onde salvar o arquivo de transcrição.
+
+    Returns:
+        Texto da transcrição do áudio.
+    """
     logging.info(f'Transcrevendo {file_path}...')
     result = pipe(str(file_path))
     transcription_text = result['text']
@@ -66,7 +89,28 @@ def transcribe_audio(file_path: Path, pipe: Pipeline, output_dir: Path) -> str:
 
 
 class AudioTranscriber:
+    """Handler para transcrição de áudio em bot do Telegram.
+
+    Esta classe gerencia o modelo Whisper e processa mensagens de áudio
+    recebidas no Telegram, transcrevendo-as e respondendo ao usuário.
+
+    Attributes:
+        model_name: Nome do modelo Whisper do Hugging Face.
+        output_dir: Diretório para salvar as transcrições.
+        device: Dispositivo para execução do modelo ('cuda' ou 'cpu').
+        processor: Processador do modelo Whisper.
+        model: Modelo Whisper carregado.
+        pipeline: Pipeline de speech-to-text configurado.
+    """
+
     def __init__(self, model_name: str, output_dir: str, device: str):
+        """Inicializa o transcriptor de áudio.
+
+        Args:
+            model_name: Nome do modelo Whisper do Hugging Face.
+            output_dir: Caminho do diretório para salvar transcrições.
+            device: Dispositivo para execução ('cuda' ou 'cpu').
+        """
         self.model_name = model_name
         self.output_dir = Path(output_dir)
         self.device = device
@@ -76,6 +120,14 @@ class AudioTranscriber:
         self.pipeline = self._init_pipeline()
 
     def _init_pipeline(self):
+        """Inicializa e configura o pipeline de transcrição Whisper.
+
+        Carrega o modelo e processador do Hugging Face e cria um pipeline
+        otimizado para transcrição automática de fala.
+
+        Returns:
+            Pipeline configurado para automatic-speech-recognition.
+        """
         torch_dtype = torch.float16 if self.device == 'cuda' else torch.float32
 
         logging.info(f'Carregando modelo {self.model_name}...')
@@ -103,6 +155,15 @@ class AudioTranscriber:
     async def handle_audio(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
+        """Processa mensagem de áudio do Telegram.
+
+        Baixa o arquivo de áudio, transcreve usando Whisper, envia a
+        transcrição ao usuário e remove o arquivo temporário.
+
+        Args:
+            update: Objeto Update do Telegram contendo a mensagem de áudio.
+            context: Contexto do bot do Telegram.
+        """
         file_path = await download_audio(update, context)
 
         transcription_text = transcribe_audio(
@@ -122,6 +183,12 @@ class AudioTranscriber:
     async def __call__(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ):
+        """Torna a classe callable para uso como handler do Telegram.
+
+        Args:
+            update: Objeto Update do Telegram.
+            context: Contexto do bot do Telegram.
+        """
         await self.handle_audio(update, context)
 
 
