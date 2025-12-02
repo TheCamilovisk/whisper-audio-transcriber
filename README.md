@@ -1,49 +1,21 @@
 # Whisper Audio Transcriber
 
-Um script em Python para transcrição de áudio utilizando o modelo Whisper da OpenAI. Permite gravar áudio diretamente do microfone ou transcrever arquivos de áudio existentes.
+Bot do Telegram para transcrição de áudio utilizando o modelo Whisper da OpenAI. Transcreve mensagens de áudio e voz automaticamente.
 
 ## Objetivo
 
-Este projeto oferece uma interface de linha de comando simples para:
+Este projeto oferece um bot do Telegram que:
 
-- Gravar áudio diretamente do microfone
-- Transcrever arquivos de áudio em texto
-- Utilizar o modelo Whisper Large V3 Turbo para transcrições de alta qualidade
-- Salvar automaticamente as transcrições em arquivos de texto
+- Transcreve mensagens de áudio e voz automaticamente
+- Utiliza o modelo Whisper Large V3 Turbo para transcrições de alta qualidade
+- Salva automaticamente as transcrições em arquivos de texto
+- Responde com o texto transcrito diretamente no chat
 
 ## Requisitos
 
 - Python >= 3.13
 - CUDA (opcional, para aceleração GPU)
-- PortAudio (para gravação de áudio via PyAudio)
-
-### Instalação do PortAudio
-
-O PyAudio requer a biblioteca PortAudio instalada no sistema:
-
-**Ubuntu/Debian:**
-
-```bash
-sudo apt-get install portaudio19-dev
-```
-
-**Fedora:**
-
-```bash
-sudo dnf install portaudio-devel
-```
-
-**macOS:**
-
-```bash
-brew install portaudio
-```
-
-**Arch Linux:**
-
-```bash
-sudo pacman -S portaudio
-```
+- Token de bot do Telegram (obtido via [@BotFather](https://t.me/botfather))
 
 ## Instalação
 
@@ -62,39 +34,43 @@ cd whisper-audio-transcriber
 uv sync
 ```
 
+3. Configure as variáveis de ambiente:
+
+Crie um arquivo `.env` na raiz do projeto com o seguinte conteúdo:
+
+```env
+BOT_TOKEN=seu_token_aqui
+OUTPUT_DIR=outputs  # opcional, padrão: outputs/
+```
+
+Para obter um token do bot:
+
+1. Converse com [@BotFather](https://t.me/botfather) no Telegram
+2. Use o comando `/newbot` e siga as instruções
+3. Copie o token fornecido e cole no arquivo `.env`
+
 ## Uso
 
-### Gravar e transcrever áudio do microfone
+Execute o bot:
 
 ```bash
 uv run python main.py
 ```
 
-O script irá:
+O bot ficará online aguardando mensagens. Para usar:
 
-1. Iniciar a gravação de áudio
-2. Aguardar até você pressionar ENTER para parar
-3. Transcrever o áudio gravado
-4. Salvar a transcrição em `outputs/`
+1. Inicie uma conversa com seu bot no Telegram
+2. Envie uma mensagem de áudio ou voz
+3. Aguarde a transcrição (o bot responderá com o texto)
 
-### Transcrever um arquivo de áudio existente
-
-```bash
-uv run python main.py arquivo.wav
-```
-
-### Especificar diretório de saída
-
-```bash
-uv run python main.py arquivo.wav /caminho/para/saida
-```
+As transcrições também são salvas automaticamente no diretório configurado (padrão: `outputs/`).
 
 ## Dependências Principais
 
 - **transformers** (4.47): Framework para modelos de IA, incluindo Whisper
 - **torch** (>=2.9.1): PyTorch para computação de tensores
-- **pyaudio** (>=0.2.14): Gravação de áudio do microfone
-- **typer** (>=0.20.0): Interface de linha de comando
+- **python-telegram-bot** (>=22.5): Framework para bots do Telegram
+- **pydantic-settings** (>=2.12.0): Gerenciamento de configurações
 - **accelerate** (>=1.12.0): Otimização de modelos de IA
 - **flash-attn**: Implementação otimizada de attention para GPUs
 - **tokenizers** (0.21): Tokenização rápida
@@ -117,17 +93,20 @@ Versão: flash_attn 2.8.1 (CUDA 12.8, torch 2.9, Python 3.13)
 
 ## Saída
 
-As transcrições são salvas por padrão no diretório `outputs/` com o formato:
+As transcrições são salvas automaticamente no diretório configurado (padrão: `outputs/`) com o formato:
 
 ```
 <nome_do_arquivo>_transcription.txt
 ```
 
-Para gravações do microfone, o arquivo temporário é nomeado com timestamp:
+Os arquivos de áudio baixados do Telegram são nomeados com timestamp:
 
 ```
-YYYY-MM-DD_HH-MM-SS.wav
+YYYY-MM-DD_HH-MM-SS.ogg  # para mensagens de voz
+YYYY-MM-DD_HH-MM-SS.mp3  # para mensagens de áudio
 ```
+
+Os arquivos temporários são removidos automaticamente após a transcrição.
 
 ## Modelo
 
