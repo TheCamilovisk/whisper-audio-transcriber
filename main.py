@@ -128,6 +128,9 @@ class AudioTranscriber:
         Returns:
             Pipeline configurado para automatic-speech-recognition.
         """
+        logging.info('Inicializando pipeline de transcrição...')
+        logging.info(f'\t- ID do modelo: {self.model_name}')
+        logging.info(f'\t- Usando dispositivo: {self.device}')
         torch_dtype = torch.float16 if self.device == 'cuda' else torch.float32
 
         logging.info(f'Carregando modelo {self.model_name}...')
@@ -200,9 +203,11 @@ if __name__ == '__main__':
     output_dir.mkdir(parents=True, exist_ok=True)
 
     transcriber = AudioTranscriber(
-        model_name='openai/whisper-large-v3-turbo',
+        model_name=settings.model_id,
         output_dir=output_dir,
-        device='cuda' if torch.cuda.is_available() else 'cpu',
+        device='cuda'
+        if settings.use_cuda and torch.cuda.is_available()
+        else 'cpu',
     )
 
     audio_handler = MessageHandler(filters.AUDIO | filters.VOICE, transcriber)
