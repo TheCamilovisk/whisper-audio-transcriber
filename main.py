@@ -1,6 +1,7 @@
 import tempfile
 import threading
 import wave
+from datetime import datetime
 from pathlib import Path
 
 import pyaudio
@@ -18,7 +19,9 @@ def record_audio() -> str:
     RATE = 44100
 
     temp_dir = Path(tempfile.gettempdir())
-    OUTPUT_FILENAME = str(temp_dir / 'recorded_audio.wav')
+    OUTPUT_FILENAME = str(
+        temp_dir / f'{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.wav'
+    )
 
     p = pyaudio.PyAudio()
     stream = p.open(
